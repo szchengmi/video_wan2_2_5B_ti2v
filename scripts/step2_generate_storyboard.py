@@ -28,6 +28,9 @@ def generate_storyboard(script_data):
         }
         for shot in scene.get("shots", []):
             char = shot.get("character", "none")
+            # 兼容 character 是列表的情况 (如 ["xiaoming"])
+            if isinstance(char, list):
+                char = char[0] if char else "none"
             shot_type = shot.get("shot_type", "medium_shot")
             emotion = shot.get("emotion", "calm")
             if char != "none":
