@@ -64,69 +64,21 @@ def get_dir_size_gb(path):
     return total / 1e9
 
 
-def download_file(model_id, filename, dest_dir):
-    """下载单个文件，huggingface_hub 优先，aria2c 镜像兜底"""
+def download_file(model_id, filename, dest_path):
+    """下载单个文件，直接到目标位置"""
     from huggingface_hub import hf_hub_download
-
-    bare_name = os.path.basename(filename)
-    dest = f"{dest_dir}/{bare_name}"
-
-    # 已存在且足够大
-    if os.path.isfile(dest) and os.path.getsize(dest) > 100 * 1024 * 1024:
-        size_mb = os.path.getsize(dest) / 1e6
-        log(f"  ✅ {bare_name} (已存在, {size_mb:.0f}MB)")
-        return True
-
-    os.makedirs(dest_dir, exist_ok=True)
-
-    # 方式1: huggingface_hub (需要 HF_TOKEN)
     try:
-        result_path = hf_hub_download(
+        dest_dir = os.path.dirname(dest_path)
+        os.makedirs(dest_dir, exist_ok=True)
+        hf_hub_download(
             repo_id=model_id,
             filename=filename,
             local_dir=dest_dir,
         )
-        if result_path != dest and os.path.isfile(result_path):
-            os.rename(result_path, dest)
-        size_mb = os.path.getsize(dest) / 1e6
-        if size_mb > 100:
-            log(f"  ✅ huggingface_hub: {bare_name} ({size_mb:.0f}MB)")
-            return True
+        return True
     except Exception as e:
-        log(f"  ⚠️ huggingface_hub 失败: {str(e)[:100]}")
-
-    # 方式2: aria2c 从 HF 镜像下载 (无需认证)
-    hf_url = f"https://hf-mirror.com/{model_id}/resolve/main/{filename}"
-    log(f"  ⬇️  镜像下载: {bare_name}...")
-    try:
-        subprocess.run(["aria2c", "--version"], capture_output=True, timeout=5, check=True)
-        cmd = [
-            "aria2c", "-x", "8", "-s", "8", "-k", "1M",
-            "--async-dns=false", "--continue=true",
-            f"-d={dest_dir}", f"-o={bare_name}", hf_url,
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-        if result.returncode == 0 and os.path.isfile(dest) and os.path.getsize(dest) > 100 * 1024 * 1024:
-            size_mb = os.path.getsize(dest) / 1e6
-            log(f"  ✅ 镜像完成: {bare_name} ({size_mb:.0f}MB)")
-            return True
-    except Exception as e:
-        log(f"  ⚠️ 镜像失败: {str(e)[:80]}")
-
-    # 方式3: wget 兜底
-    try:
-        subprocess.run(["wget", "--version"], capture_output=True, timeout=5, check=True)
-        cmd = ["wget", "-q", "--show-progress", "--continue", "-O", dest, hf_url]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
-        if result.returncode == 0 and os.path.isfile(dest) and os.path.getsize(dest) > 100 * 1024 * 1024:
-            size_mb = os.path.getsize(dest) / 1e6
-            log(f"  ✅ wget 完成: {bare_name} ({size_mb:.0f}MB)")
-            return True
-    except:
-        pass
-
-    log(f"  ❌ {bare_name} 全部方式失败")
-    return False
+        log(f"    ❌ {filename}: {e}")
+        return False
 
 
 # ============================================================
@@ -190,13 +142,16 @@ def main():
 
         ok = 0
         for filename in model["files"]:
-            rel_path = filename
-            # 从 filename 提取 bare name 用于保存
-            bare_name = os.path.basename(filename)
-            src_repo = model["id"]
+            dest = f"{target}/{filename}"
 
-            if download_file(src_repo, filename, target):
+            if download_file(model["id"], filename, dest):
                 ok += 1
+
+            # 每个文件后检查容量
+            free = shutil.disk_usage("/kaggle/working").free / 1e9
+            if free < 0.5:
+                log(f"  ⚠️  磁盘不足！剩余{free:.1f}GB，停止下载")
+                break
 
         size = get_dir_size_gb(target)
         log(f"  结果: {model['dir']} ({size:.2f}GB, {ok}/{len(model['files'])}个)")
