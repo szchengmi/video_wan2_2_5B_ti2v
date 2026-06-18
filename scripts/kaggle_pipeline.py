@@ -73,6 +73,10 @@ def main():
     script = generate_script(EPISODE_NUM)
     log(f"剧本: {script.get('title')}")
 
+    # 保存剧本
+    script_path = f"{get_dirs(EPISODE_NUM)['storyboard']}/episode_{EPISODE_NUM:02d}_script.json"
+    save_json(script, script_path)
+
     # Step 2: 分镜生成
     log("\n" + "=" * 50)
     log("Step 2: 分镜生成")
