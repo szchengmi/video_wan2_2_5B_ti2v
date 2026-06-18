@@ -289,15 +289,13 @@ def _build_wan22_workflow(positive_prompt, negative_prompt,
             "class_type": "ModelSamplingSD3",
             "inputs": {
                 "model": ["1", 0],
-                "shift": shift,  # ★ 关键参数
+                "shift": shift,
             }
         },
         "7": {
             "class_type": "Wan22ImageToVideoLatent",
             "inputs": {
                 "vae": ["3", 0],
-                "positive": ["4", 0],
-                "negative": ["5", 0],
                 "width": width,
                 "height": height,
                 "length": frames,
@@ -308,9 +306,9 @@ def _build_wan22_workflow(positive_prompt, negative_prompt,
             "class_type": "KSampler",
             "inputs": {
                 "model": ["6", 0],
-                "positive": ["7", 0],
-                "negative": ["7", 1],
-                "latent_image": ["7", 2],
+                "positive": ["4", 0],
+                "negative": ["5", 0],
+                "latent_image": ["7", 0],
                 "seed": seed,
                 "steps": steps,
                 "cfg": cfg,
