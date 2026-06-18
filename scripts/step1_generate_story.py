@@ -31,7 +31,7 @@ def generate_script(episode_num=1, genre="urban_romance", prev_summary=""):
 "emotion": "情绪", "subtitle": "字幕"}}]}}], "next_episode_hook": "下集预告"}}"""
 
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=[prompt],
         config={
             "temperature": 0.9, "top_p": 0.95, "top_k": 40, "max_output_tokens": 8192,
