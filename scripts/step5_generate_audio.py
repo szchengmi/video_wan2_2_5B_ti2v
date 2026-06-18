@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import *
 
 import argparse
+import subprocess
 
 
 def main():
@@ -103,6 +104,24 @@ def main():
             log(f"  [{count}/{total}] {sid} ({char}) {'✓' if ok else '静音'}")
 
     log("配音生成完成")
+
+
+def _save_silence(output_path, duration):
+    """生成静音 WAV 文件"""
+    try:
+        import wave, struct
+        sr = AUDIO_SAMPLE_RATE
+        n = int(sr * duration)
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        with wave.open(output_path, 'w') as w:
+            w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+            for _ in range(n): w.writeframes(struct.pack('<h', 0))
+    except Exception:
+        subprocess.run(
+            f'ffmpeg -y -f lavfi -i "anullsrc=r={AUDIO_SAMPLE_RATE}:cl=mono" '
+            f'-t {duration} -acodec pcm_s16le "{output_path}" 2>/dev/null',
+            shell=True, timeout=30,
+        )
 
 
 if __name__ == "__main__":

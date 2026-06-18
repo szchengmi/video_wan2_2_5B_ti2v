@@ -12,14 +12,23 @@ import subprocess
 # ============================================================
 
 def _get_kaggle_secret(key_name):
-    """从 Kaggle Secrets 读取密钥"""
+    """从 Kaggle Secrets 读取密钥（兼容 Notebook 预赋值变量）"""
+    # 方式1: Notebook 里已赋值的变量（如 secret_value_1）
+    try:
+        val = eval(key_name)
+        if val:
+            return val
+    except:
+        pass
+    # 方式2: kaggle_secrets 库
     try:
         from kaggle_secrets import UserSecretsClient
         val = UserSecretsClient().get_secret(key_name)
         if val:
             return val
-    except Exception:
+    except:
         pass
+    # 方式3: 环境变量
     return os.environ.get(key_name, "")
 
 GOOGLE_API_KEY = _get_kaggle_secret("GOOGLE_API_KEY")
@@ -30,7 +39,7 @@ EPISODE_NUM = int(os.environ.get("EPISODE_NUM", "1"))
 
 # Wan2.2 TI2V 模型路径 (Kaggle Dataset)
 WAN22_DATASET = "/kaggle/input/saysnkaggle/wan2-2-5b-f16"
-WAN22_MODELS_DIR = WAN22_DATASET  # safetensors 文件直接在此目录下
+WAN22_MODELS_DIR = f"{WAN22_DATASET}/models"  # Dataset 有 models/ 子目录
 
 # 视频参数 (Wan2.2 TI2V 5B)
 WAN22_WIDTH = 832
