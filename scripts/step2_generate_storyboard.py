@@ -74,8 +74,23 @@ def generate_storyboard(script_data):
             })
         storyboard["scenes"].append(scene_data)
 
+    # 角色名映射: 中文 → 拼音 (CHARACTER_PROMPTS 的 key)
+    CHAR_NAME_MAP = {
+        "小明": "xiaoming", "小丽": "xiaoli", "王总": "boss_wang",
+        "xiaoming": "xiaoming", "xiaoli": "xiaoli", "boss_wang": "boss_wang",
+    }
+
     for cid in characters_used:
-        storyboard["characters"][cid] = CHARACTER_PROMPTS[cid]
+        mapped = CHAR_NAME_MAP.get(cid, cid)
+        if mapped in CHARACTER_PROMPTS:
+            storyboard["characters"][cid] = CHARACTER_PROMPTS[mapped]
+        else:
+            # fallback: 用通用配置
+            storyboard["characters"][cid] = {
+                "base_prompt": f"{cid}, anime style, high quality",
+                "negative_prompt": "ugly, deformed, blurry, low quality",
+                "seed": 42,
+            }
     return storyboard
 
 
