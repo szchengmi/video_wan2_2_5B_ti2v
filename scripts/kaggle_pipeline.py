@@ -82,6 +82,10 @@ def main():
     total = sum(len(s.get("shots", [])) for s in storyboard.get("scenes", []))
     log(f"分镜: {len(storyboard['scenes'])}场景 | {total}镜头")
 
+    # 保存 storyboard
+    sb_path = f"{get_dirs(EPISODE_NUM)['storyboard']}/episode_{EPISODE_NUM:02d}_storyboard.json"
+    save_json(storyboard, sb_path)
+
     # Step 3: 跳过 (Wan2.2 直接生成视频，不需要先画图)
     log("\n" + "=" * 50)
     log("Step 3: 画面生成 → 跳过 (Wan2.2 直接 T2V)")
@@ -91,7 +95,6 @@ def main():
     log("\n" + "=" * 50)
     log("Step 4: 视频生成 (Wan2.2 TI2V 5B)")
     log("=" * 50)
-    sb_path = f"{get_dirs(EPISODE_NUM)['storyboard']}/episode_{EPISODE_NUM:02d}_storyboard.json"
     videos_dir = f"{get_dirs(EPISODE_NUM)['videos']}"
     subprocess.run([
         "python", "step4_generate_videos_wan22.py",
