@@ -34,7 +34,7 @@ from pathlib import Path
 # ============================================================
 # 配置
 # ============================================================
-MODELS_DIR = "/kaggle/input/video-wan2-2-5b-ti2v"
+MODELS_DIR = "/kaggle/working/models"
 OUTPUT_DIR = "/kaggle/working/ai-series"
 
 # 视频参数 (Wan2.2 TI2V 5B 推荐)
