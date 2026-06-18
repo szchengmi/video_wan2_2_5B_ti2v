@@ -17,6 +17,7 @@ Kaggle 用法:
 import os
 import sys
 import time
+import shutil
 import subprocess
 
 MODEL_CACHE_DIR = "/kaggle/working/models"
@@ -141,6 +142,12 @@ def main():
     log("  Wan2.2 TI2V 5B 模型下载")
     log("=" * 55)
     log(f"目标: {MODEL_CACHE_DIR}")
+
+    # 清理旧文件
+    if os.path.isdir(MODEL_CACHE_DIR):
+        log(f"清理旧目录: {MODEL_CACHE_DIR}")
+        shutil.rmtree(MODEL_CACHE_DIR)
+    os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
 
     subprocess.run("pip install -q -U huggingface_hub", shell=True, timeout=120)
 
