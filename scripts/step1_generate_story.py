@@ -11,12 +11,9 @@ import re
 
 
 def generate_script(episode_num=1, genre="urban_romance", prev_summary=""):
-    import google.generativeai as genai
+    from google import genai
 
-    genai.configure(api_key=GOOGLE_API_KEY)
-    model = genai.GenerativeModel("gemini-2.0-flash", generation_config={
-        "temperature": 0.9, "top_p": 0.95, "top_k": 40, "max_output_tokens": 8192,
-    })
+    client = genai.Client(api_key=GOOGLE_API_KEY)
 
     prompt = f"""你是一个专业的中文短剧编剧。请为一部{genre}题材的AI短剧写第{episode_num}集的完整剧本。
 
@@ -33,7 +30,13 @@ def generate_script(episode_num=1, genre="urban_romance", prev_summary=""):
 "action": "动作", "dialogue": "对话", "narration": "旁白",
 "emotion": "情绪", "subtitle": "字幕"}}]}}], "next_episode_hook": "下集预告"}}"""
 
-    response = model.generate_content(prompt)
+    response = client.models.generate_content(
+        model="gemini-2.0-flash",
+        contents=[prompt],
+        config={
+            "temperature": 0.9, "top_p": 0.95, "top_k": 40, "max_output_tokens": 8192,
+        },
+    )
     text = response.text.strip()
     if text.startswith("```"):
         lines = text.split("\n")
