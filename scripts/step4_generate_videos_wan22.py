@@ -1,56 +1,91 @@
 #!/usr/bin/env python3
 """
-Step 4: 视频生成 - Wan2.2 TI2V 5B (直接文本生成视频，跳过 SD 1.5)
+Step 4: 视频生成 - Wan2.2 TI2V 5B (fp16 safetensors)
+=====================================================
+通过 ComfyUI API 调用 Wan2.2 生成视频。
+工作流: UNETLoader → ModelSamplingSD3 → Wan22ImageToVideoLatent → KSampler → VAEDecode → VHS_VideoCombine
 
-使用 ComfyUI API 调用 Wan2.2 TI2V 5B (fp16 safetensors) 直接生成视频。
-工作流: UNETLoader → CLIPLoader → VAELoader → ModelSamplingSD3 → Wan22ImageToVideoLatent → KSampler → VAEDecode → VHS_VideoCombine
-
-模型来源: /kaggle/input/saysnkaggle/wan2-2-5b-f16/
+模型: /kaggle/input/saysnkaggle/wan2-2-5b-f16/models/
+  - wan2.2_ti2v_5B_fp16.safetensors (UNET, ~10GB)
+  - umt5_xxl_fp8_e4m3fn_scaled.safetensors (CLIP, ~6.7GB)
+  - wan2.2_vae.safetensors (VAE, ~1.4GB)
 """
 
-import sys, os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import *
-
+import os
+import sys
 import json
 import time
 import shutil
-import argparse
 import urllib.request
+import urllib.error
 import subprocess
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from common import (
+    log, save_json, load_json, run_cmd,
+    EPISODE_NUM, get_dirs, WAN22_MODELS_DIR,
+)
 
-def log(msg):
-    ts = time.strftime("%H:%M:%S")
-    print(f"[{ts}] {msg}", flush=True)
+# ============================================================
+# ComfyUI 管理 (复用 wan22-ai-series 的成熟逻辑)
+# ============================================================
 
-
-def get_wan22_models():
-    """查找 Wan2.2 模型文件"""
-    search_dirs = [
-        WAN22_MODELS_DIR,
-        "/kaggle/working/models",
-    ]
-    result = {"unet": None, "clip": None, "vae": None}
-    for base in search_dirs:
-        if not os.path.isdir(base):
-            continue
-        for f in os.listdir(base):
-            fl = f.lower()
-            if "wan2.2_ti2v_5b" in fl and "fp16" in fl and f.endswith(".safetensors"):
-                result["unet"] = os.path.join(base, f)
-            elif "umt5_xxl" in fl and f.endswith(".safetensors"):
-                result["clip"] = os.path.join(base, f)
-            elif "wan2.2_vae" in fl and f.endswith(".safetensors"):
-                result["vae"] = os.path.join(base, f)
-    return result
+COMFYUI_URL = "http://127.0.0.1:8188"
+COMFYUI_DIR = "/kaggle/working/ComfyUI"
 
 
-def start_comfyui():
-    """启动 ComfyUI"""
-    COMFYUI_URL = "http://127.0.0.1:8188"
+def _find_comfyui():
+    """查找 ComfyUI 安装位置"""
+    try:
+        import importlib.util
+        spec = importlib.util.find_spec("comfy")
+        if spec and spec.origin:
+            return ("pip", os.path.dirname(spec.origin))
+    except:
+        pass
+    for candidate in ["/kaggle/working/ComfyUI", "/kaggle/working/ComfyUI-master"]:
+        if os.path.isdir(candidate) and os.path.isfile(f"{candidate}/main.py"):
+            return ("dir", candidate)
+    return None
 
-    # 已在运行？
+
+def _install_comfyui():
+    """安装 ComfyUI + 必要插件"""
+    run_cmd("pkill -f 'main.py' 2>/dev/null; true")
+    if os.path.isdir(COMFYUI_DIR):
+        shutil.rmtree(COMFYUI_DIR, ignore_errors=True)
+    log("安装 ComfyUI...")
+    run_cmd(f"git clone https://github.com/Comfyanonymous/ComfyUI.git {COMFYUI_DIR}", timeout=120)
+    os.chdir(COMFYUI_DIR)
+    run_cmd("pip install -r requirements.txt 2>&1 | tail -3", timeout=300)
+    # 安装插件
+    cn_dir = f"{COMFYUI_DIR}/custom_nodes"
+    os.makedirs(cn_dir, exist_ok=True)
+    if not os.path.isdir(f"{cn_dir}/ComfyUI-VideoHelperSuite"):
+        log("  安装 VideoHelperSuite...")
+        run_cmd(f"git clone https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git {cn_dir}/ComfyUI-VideoHelperSuite", timeout=60)
+        req = f"{cn_dir}/ComfyUI-VideoHelperSuite/requirements.txt"
+        if os.path.isfile(req):
+            run_cmd(f"pip install -r {req} 2>&1 | tail -3", timeout=60)
+
+
+def _create_extra_model_paths():
+    """创建 extra_model_paths.yaml 注册 Dataset 路径"""
+    yaml_content = f"""\
+wan22_ti2v:
+  base_path: {WAN22_MODELS_DIR}
+  diffusion_models: .
+  text_encoders: .
+  vae: .
+"""
+    yaml_path = f"{COMFYUI_DIR}/extra_model_paths.yaml"
+    with open(yaml_path, "w") as f:
+        f.write(yaml_content)
+    log(f"  extra_model_paths.yaml: {yaml_path}")
+
+
+def _start_comfyui():
+    """启动 ComfyUI 服务器"""
     try:
         urllib.request.urlopen(f"{COMFYUI_URL}/system_stats", timeout=2)
         log("ComfyUI 已在运行")
@@ -58,80 +93,176 @@ def start_comfyui():
     except:
         pass
 
-    # 查找或安装
-    comfyui_dir = None
-    for c in ["/kaggle/working/ComfyUI", "/kaggle/working/ComfyUI-master"]:
-        if os.path.isdir(c) and os.path.isfile(f"{c}/main.py"):
-            comfyui_dir = c
-            break
+    result = _find_comfyui()
+    if result:
+        install_type, path = result
+        log(f"  ComfyUI ({install_type}): {path}")
+    else:
+        _install_comfyui()
+        result = _find_comfyui()
+        if not result:
+            log("❌ ComfyUI 安装失败")
+            return False
 
-    if not comfyui_dir:
-        log("安装 ComfyUI...")
-        subprocess.run(
-            "cd /kaggle/working && git clone https://github.com/comfyanonymous/ComfyUI.git && "
-            "cd ComfyUI && pip install -r requirements.txt -q",
-            shell=True, timeout=300
+    _create_extra_model_paths()
+
+    cwd = result[1] if isinstance(result[1], str) and os.path.isdir(result[1]) else None
+    log_file = "/kaggle/working/ai-series/comfyui.log"
+    log_fh = open(log_file, "w")
+
+    has_gpu = False
+    try:
+        import torch
+        has_gpu = torch.cuda.is_available()
+    except:
+        pass
+    gpu_flag = [] if has_gpu else ["--cpu"]
+    log(f"  GPU: {'可用' if has_gpu else 'CPU模式'}")
+
+    env = os.environ.copy()
+    env["CUDA_VISIBLE_DEVICES"] = "0"
+
+    if result[0] == "pip":
+        proc = subprocess.Popen(
+            ["python", "-m", "comfy", "main", "--dont-print-server",
+             "--preview-method", "none", "--listen", "0.0.0.0", "--port", "8188"] + gpu_flag,
+            stdout=log_fh, stderr=subprocess.STDOUT, env=env,
         )
-        comfyui_dir = "/kaggle/working/ComfyUI"
+    else:
+        proc = subprocess.Popen(
+            ["python", "main.py", "--dont-print-server",
+             "--preview-method", "none", "--listen", "0.0.0.0", "--port", "8188"] + gpu_flag,
+            cwd=cwd, stdout=log_fh, stderr=subprocess.STDOUT, env=env,
+        )
 
-    # 安装必要的插件
-    plugins = {
-        "ComfyUI-VideoHelperSuite": "https://github.com/Kosinkadink/ComfyUI-VideoHelperSuite.git",
-    }
-    for name, url in plugins.items():
-        plugin_path = f"{comfyui_dir}/custom_nodes/{name}"
-        if not os.path.isdir(plugin_path):
-            log(f"安装 {name}...")
-            subprocess.run(
-                f"cd {comfyui_dir}/custom_nodes && git clone {url}",
-                shell=True, timeout=120
-            )
-
-    # 创建 extra_model_paths.yaml
-    _create_extra_model_paths(comfyui_dir)
-
-    # 启动
-    log("启动 ComfyUI...")
-    cmd = f"cd {comfyui_dir} && python main.py --listen 0.0.0.0 --dont-print-server 2>&1 &"
-    subprocess.Popen(cmd, shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-    # 等待就绪
-    for i in range(60):
+    for i in range(200):
+        time.sleep(3)
         try:
             urllib.request.urlopen(f"{COMFYUI_URL}/system_stats", timeout=2)
-            log(f"ComfyUI 就绪 ({i+1}s)")
+            log(f"  ComfyUI 就绪 ({(i+1)*3}s)")
+            log_fh.close()
             return True
         except:
-            time.sleep(2)
+            if i < 5 or i % 20 == 0:
+                log(f"  ⏳ 等待... ({(i+1)*3}s)")
 
-    log("ComfyUI 启动超时")
+    log_fh.close()
+    log("  ❌ ComfyUI 启动超时")
     return False
 
 
-def _create_extra_model_paths(comfyui_dir):
-    """创建 extra_model_paths.yaml 注册模型路径"""
-    yaml_content = f"""wan22_ti2v:
-  base_path: {WAN22_MODELS_DIR}
-  diffusion_models: .
-  text_encoders: .
-  vae: .
-"""
-    yaml_path = f"{comfyui_dir}/extra_model_paths.yaml"
-    with open(yaml_path, "w") as f:
-        f.write(yaml_content)
+# ============================================================
+# 模型查找
+# ============================================================
+
+def _find_wan22_models():
+    """查找 Wan2.2 模型文件"""
+    search_paths = [WAN22_MODELS_DIR, "/kaggle/working/models"]
+    # 也搜索 Dataset 的 models/ 子目录
+    for d in ["/kaggle/input/saysnkaggle/wan2-2-5b-f16",
+              "/kaggle/input/saysnkaggle/wan2-2-5b-f16/models"]:
+        if os.path.isdir(d):
+            search_paths.append(d)
+
+    result = {"unet": None, "clip": None, "vae": None}
+    for base in search_paths:
+        if not os.path.isdir(base):
+            continue
+        for f in os.listdir(base):
+            fl = f.lower()
+            fp = os.path.join(base, f)
+            if not os.path.isfile(fp):
+                continue
+            if result["unet"] is None and "wan2.2_ti2v_5b" in fl and "fp16" in fl:
+                result["unet"] = fp
+            elif result["clip"] is None and "umt5_xxl" in fl:
+                result["clip"] = fp
+            elif result["vae"] is None and "wan2.2_vae" in fl:
+                result["vae"] = fp
+    return result
 
 
-def build_wan22_workflow(positive_prompt, negative_prompt, unet_path, clip_path, vae_path,
-                          width=832, height=480, frames=49, steps=20, cfg=5.0,
-                          sampler="euler", scheduler="simple", shift=8.0, denoise=1.0,
-                          seed=42, fps=8):
-    """构建 Wan2.2 TI2V 工作流"""
-    # 参考 video_wan2_2_5B_ti2v.json 的架构
-    # 使用 UNETLoader (不是 GGUF) + CLIPLoader + VAELoader + ModelSamplingSD3 + Wan22ImageToVideoLatent + KSampler + VAEDecode + VHS_VideoCombine
+# ============================================================
+# ComfyUI API
+# ============================================================
 
-    unet_name = os.path.basename(unet_path) if unet_path else "wan2.2_ti2v_5B_fp16.safetensors"
-    clip_name = os.path.basename(clip_path) if clip_path else "umt5_xxl_fp8_e4m3fn_scaled.safetensors"
-    vae_name = os.path.basename(vae_path) if vae_path else "wan2.2_vae.safetensors"
+def _queue_prompt(workflow):
+    """提交工作流"""
+    payload = json.dumps({"prompt": workflow, "client_id": "wan22-ti2v"}).encode()
+    req = urllib.request.Request(
+        f"{COMFYUI_URL}/prompt",
+        data=payload,
+        headers={"Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=600) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as e:
+        body = e.read().decode()
+        log(f"  HTTP {e.code}: {body[:300]}")
+        raise
+
+
+def _wait_for_completion(prompt_id, timeout=1800):
+    """等待工作流完成"""
+    start = time.time()
+    last_log = 0
+    while time.time() - start < timeout:
+        try:
+            req = urllib.request.Request(f"{COMFYUI_URL}/history/{prompt_id}")
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                history = json.loads(resp.read())
+            if prompt_id in history:
+                entry = history[prompt_id]
+                status = entry.get("status", {}).get("status_str")
+                if status == "success":
+                    return entry
+                if status == "error":
+                    raise RuntimeError(f"工作流失败: {entry}")
+                elapsed = time.time() - start
+                if elapsed - last_log >= 30:
+                    log(f"    ⏳ {elapsed:.0f}s")
+                    last_log = elapsed
+        except urllib.error.HTTPError:
+            pass
+        time.sleep(5)
+    raise TimeoutError(f"超时 ({timeout}s)")
+
+
+# ============================================================
+# 工作流构建 — 使用 ModelSamplingSD3 + shift 参数
+# ============================================================
+
+def _build_wan22_workflow(positive_prompt, negative_prompt,
+                           unet_path, clip_path, vae_path,
+                           width, height, frames,
+                           steps, cfg, sampler, scheduler, shift, seed):
+    """
+    Wan2.2 TI2V 工作流 (fp16 safetensors)
+
+    节点连接:
+      1: UNETLoader → 6: ModelSamplingSD3.model
+      2: CLIPLoader → 4,5: CLIPTextEncode.clip
+      3: VAELoader → 7: Wan22ImageToVideoLatent.vae, 9: VAEDecode.vae
+      4: CLIPTextEncode (positive) → 7: Wan22ImageToVideoLatent
+      5: CLIPTextEncode (negative) → 7: Wan22ImageToVideoLatent
+      6: ModelSamplingSD3 → 8: KSampler.model  (★ shift 参数在这里)
+      7: Wan22ImageToVideoLatent → 8: KSampler.latent_image
+      8: KSampler → 9: VAEDecode.samples
+      9: VAEDecode → 10: VHS_VideoCombine.images
+      10: VHS_VideoCombine → 输出视频
+
+    关键: ModelSamplingSD3 将 shift 参数应用到 UNET 模型
+    """
+    unet_name = os.path.basename(unet_path)
+    clip_name = os.path.basename(clip_path)
+    vae_name = os.path.basename(vae_path)
+
+    # Wan22ImageToVideoLatent 的 latent 参数
+    # 48-channel latent, 16x spatial downsample
+    lat_h = height // 16
+    lat_w = width // 16
+    lat_frames = (frames - 1) // 4 + 1
 
     workflow = {
         "1": {
@@ -156,181 +287,182 @@ def build_wan22_workflow(positive_prompt, negative_prompt, unet_path, clip_path,
         },
         "6": {
             "class_type": "ModelSamplingSD3",
-            "inputs": {"model": ["1", 0], "shift": shift}
+            "inputs": {
+                "model": ["1", 0],
+                "shift": shift,  # ★ 关键参数
+            }
         },
         "7": {
             "class_type": "Wan22ImageToVideoLatent",
             "inputs": {
                 "vae": ["3", 0],
+                "positive": ["4", 0],
+                "negative": ["5", 0],
                 "width": width,
                 "height": height,
                 "length": frames,
-                "batch_size": 1
+                "batch_size": 1,
             }
         },
         "8": {
             "class_type": "KSampler",
             "inputs": {
                 "model": ["6", 0],
-                "positive": ["4", 0],
-                "negative": ["5", 0],
-                "latent_image": ["7", 0],
+                "positive": ["7", 0],
+                "negative": ["7", 1],
+                "latent_image": ["7", 2],
                 "seed": seed,
                 "steps": steps,
                 "cfg": cfg,
                 "sampler_name": sampler,
                 "scheduler": scheduler,
-                "denoise": denoise
+                "denoise": 1.0,
             }
         },
         "9": {
             "class_type": "VAEDecode",
-            "inputs": {"samples": ["8", 0], "vae": ["3", 0]}
+            "inputs": {
+                "samples": ["8", 0],
+                "vae": ["3", 0],
+            }
         },
         "10": {
             "class_type": "VHS_VideoCombine",
             "inputs": {
                 "images": ["9", 0],
-                "frame_rate": fps,
+                "frame_rate": 8,
                 "loop_count": 0,
                 "filename_prefix": "wan22",
                 "format": "video/h264-mp4",
                 "pingpong": False,
-                "save_output": True
+                "save_output": True,
             }
-        }
+        },
     }
-
     return workflow
 
 
-def generate_video(workflow, output_path, timeout=1800):
-    """通过 ComfyUI API 生成视频"""
-    COMFYUI_URL = "http://127.0.0.1:8188"
-
-    data = json.dumps({"prompt": workflow}).encode("utf-8")
-    req = urllib.request.Request(
-        f"{COMFYUI_URL}/prompt",
-        data=data,
-        headers={"Content-Type": "application/json"}
-    )
-
-    try:
-        resp = urllib.request.urlopen(req, timeout=30)
-        result = json.loads(resp.read())
-        prompt_id = result.get("prompt_id")
-        if not prompt_id:
-            return False
-    except Exception as e:
-        log(f"  提交失败: {e}")
-        return False
-
-    # 等待完成
-    start = time.time()
-    while time.time() - start < timeout:
-        try:
-            resp = urllib.request.urlopen(f"{COMFYUI_URL}/history/{prompt_id}", timeout=5)
-            history = json.loads(resp.read())
-            if prompt_id in history:
-                entry = history[prompt_id]
-                status = entry.get("status", {}).get("status_str")
-                if status == "success":
-                    # 查找视频输出
-                    for nid, node_output in entry.get("outputs", {}).items():
-                        if "gifs" in node_output:
-                            gifs = node_output["gifs"]
-                            if gifs and len(gifs) > 0:
-                                src = gifs[0]
-                                if isinstance(src, dict):
-                                    src = src.get("fullpath", "")
-                                if src and os.path.isfile(src):
-                                    shutil.copy2(src, output_path)
-                                    return True
-                    log("  完成但无视频输出")
-                    return False
-                if status == "error":
-                    log(f"  执行失败")
-                    return False
-        except:
-            pass
-        time.sleep(5)
-
-    log("  超时")
-    return False
+def _save_placeholder_video(shot, output_path, num_frames):
+    """生成占位视频"""
+    from PIL import Image, ImageDraw
+    res = 480
+    img = Image.new("RGB", (res, res), (20, 20, 40))
+    draw = ImageDraw.Draw(img)
+    draw.text((20, 30), "[VIDEO]", fill=(200, 200, 255))
+    draw.text((20, 70), shot.get("shot_id", ""), fill=(200, 255, 200))
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    tmp = output_path.replace(".mp4", "_tmp.png")
+    img.save(tmp)
+    dur = max(num_frames / 8, 1)
+    run_cmd(f'ffmpeg -y -loop 1 -i "{tmp}" -t {dur} -c:v libx264 -pix_fmt yuv420p -movflags +faststart "{output_path}" 2>/dev/null')
+    if os.path.exists(tmp):
+        os.remove(tmp)
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Wan2.2 TI2V 视频生成")
-    parser.add_argument("--storyboard", required=True)
-    parser.add_argument("--output-dir", default="output/videos")
-    args = parser.parse_args()
+# ============================================================
+# 主函数
+# ============================================================
 
-    sb = load_json(args.storyboard)
-    dirs = get_dirs(sb.get("episode", 1))
-    total = sum(len(s.get("shots", [])) for s in sb.get("scenes", []))
+def main(storyboard=None):
+    log("=" * 50)
+    log("Step 4: 视频生成 (Wan2.2 TI2V 5B fp16)")
+    log("=" * 50)
 
-    log(f"镜头数: {total}")
+    dirs = get_dirs(EPISODE_NUM)
+    total = sum(len(s.get("shots", [])) for s in storyboard.get("scenes", []))
 
-    # 查找模型
-    models = get_wan22_models()
-    log(f"UNET: {os.path.basename(models['unet']) if models['unet'] else '未找到'}")
-    log(f"CLIP: {os.path.basename(models['clip']) if models['clip'] else '未找到'}")
-    log(f"VAE: {os.path.basename(models['vae']) if models['vae'] else '未找到'}")
+    # 模型
+    models = _find_wan22_models()
+    for name, path in [("UNET", models["unet"]), ("CLIP", models["clip"]), ("VAE", models["vae"])]:
+        if not path:
+            log(f"  ❌ {name} 未找到")
+            return
+        log(f"  ✅ {name}: {os.path.basename(path)} ({os.path.getsize(path)/1e6:.0f}MB)")
 
-    if not models["unet"] or not models["vae"]:
-        log("关键模型未找到!")
-        sys.exit(1)
+    # ComfyUI
+    if not _start_comfyui():
+        log("❌ ComfyUI 启动失败")
+        return
 
-    # 启动 ComfyUI
-    if not start_comfyui():
-        log("ComfyUI 启动失败!")
-        sys.exit(1)
+    # 参数
+    w, h = 832, 480
+    num_frames = 49  # ~6s @ 8fps
+    steps = 20
+    cfg = 5.0
+    sampler = "euler"
+    scheduler = "simple"
+    shift = 8.0
+
+    log(f"参数: {w}x{h} | {num_frames}f | {steps}步 | CFG={cfg} | shift={shift} | {sampler}/{scheduler}")
 
     count = 0
-    for scene in sb.get("scenes", []):
+    for scene in storyboard.get("scenes", []):
         for shot in scene.get("shots", []):
             count += 1
             sid = shot["shot_id"]
-            ep = sb.get("episode", 1)
-            out = f"{args.output_dir}/ep{ep:02d}_{scene['scene_id']}_{sid}.mp4"
+            ep = storyboard.get("episode", 1)
+            out = f"{dirs['videos']}/ep{ep:02d}_{scene['scene_id']}_{sid}.mp4"
 
             if os.path.exists(out) and os.path.getsize(out) > 100000:
-                log(f"[{count}/{total}] {sid} 跳过(已存在)")
+                log(f"  [{count}/{total}] {sid} 跳过")
                 continue
 
-            # 获取 prompt
-            prompt = shot.get("prompt", "anime style, high quality")
-            neg_prompt = shot.get("negative_prompt", "blurry, distorted, low quality")
+            video_prompt = f"{shot.get('prompt', '')}, smooth motion, cinematic, high quality"
+            neg_prompt = shot.get("negative_prompt", "blurry, distorted, static, motionless, low quality")
             seed = shot.get("seed", 42)
-            if isinstance(seed, str):
+            if isinstance(seed, str) or seed < 0:
                 seed = 42
 
-            # 调整分辨率
-            w = WAN22_WIDTH
-            h = WAN22_HEIGHT
-            frames = WAN22_FRAMES
-
-            workflow = build_wan22_workflow(
-                positive_prompt=prompt,
+            workflow = _build_wan22_workflow(
+                positive_prompt=video_prompt,
                 negative_prompt=neg_prompt,
                 unet_path=models["unet"],
                 clip_path=models["clip"],
                 vae_path=models["vae"],
-                width=w, height=h, frames=frames,
-                steps=WAN22_STEPS, cfg=WAN22_CFG,
-                sampler=WAN22_SAMPLER, scheduler=WAN22_SCHEDULER,
-                shift=WAN22_SHIFT, seed=seed, fps=WAN22_FPS
+                width=w, height=h, frames=num_frames,
+                steps=steps, cfg=cfg,
+                sampler=sampler, scheduler=scheduler,
+                shift=shift, seed=seed,
             )
 
-            log(f"[{count}/{total}] {sid} 生成中 ({w}x{h}, {frames}f)...")
-            if generate_video(workflow, out):
-                size_mb = os.path.getsize(out) / 1e6
-                log(f"[{count}/{total}] {sid} ✓ ({size_mb:.1f}MB)")
-            else:
-                log(f"[{count}/{total}] {sid} 失败")
+            try:
+                log(f"  [{count}/{total}] {sid} 提交...")
+                result = _queue_prompt(workflow)
+                prompt_id = result.get("prompt_id")
+                if not prompt_id:
+                    raise RuntimeError(f"无 prompt_id: {result}")
+
+                completion = _wait_for_completion(prompt_id, timeout=1800)
+                outputs = completion.get("outputs", {})
+
+                video_output = None
+                for nid, nout in outputs.items():
+                    if "gifs" in nout:
+                        gifs = nout["gifs"]
+                        if isinstance(gifs, list) and gifs:
+                            video_output = gifs[0]
+                            if isinstance(video_output, dict):
+                                video_output = video_output.get("fullpath", "")
+                            break
+
+                if video_output and os.path.isfile(video_output):
+                    shutil.copy2(video_output, out)
+                    size_mb = os.path.getsize(out) / 1e6
+                    log(f"  [{count}/{total}] {sid} ✓ ({size_mb:.1f}MB)")
+                    if size_mb < 0.05:
+                        log(f"    ⚠️ 文件极小，可能无运动")
+                else:
+                    log(f"  [{count}/{total}] {sid} 无输出")
+                    _save_placeholder_video(shot, out, num_frames)
+
+            except Exception as e:
+                log(f"  [{count}/{total}] {sid} 失败: {e}")
+                _save_placeholder_video(shot, out, num_frames)
 
     log("视频生成完成")
 
 
 if __name__ == "__main__":
-    main()
+    dirs = get_dirs(EPISODE_NUM)
+    storyboard = load_json(f"{dirs['storyboard']}/episode_{EPISODE_NUM:02d}_storyboard.json")
+    main(storyboard)
