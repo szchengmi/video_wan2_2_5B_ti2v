@@ -19,7 +19,8 @@ Kaggle 运行:
 """
 
 import sys, os
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, _SCRIPT_DIR)
 
 # 导入 common 中的配置和工具
 from common import (
@@ -31,6 +32,7 @@ from common import (
 import time
 import shutil
 import argparse
+import subprocess
 
 
 def main():
@@ -60,7 +62,7 @@ def main():
 
     # 安装依赖
     log("\n安装依赖...")
-    run_cmd("pip install -q edge-tts psutil", timeout=60)
+    subprocess.run("pip install -q edge-tts psutil", shell=True, timeout=60)
 
     t0 = time.time()
 
@@ -90,32 +92,37 @@ def main():
     log("\n" + "=" * 50)
     log("Step 4: 视频生成 (Wan2.2 TI2V 5B)")
     log("=" * 50)
-    from step4_generate_videos_wan22 import main as step4_main
-    class Args:
-        storyboard = f"{get_dirs(EPISODE_NUM)['storyboard']}/episode_{EPISODE_NUM:02d}_storyboard.json"
-        output_dir = f"{get_dirs(EPISODE_NUM)['videos']}"
-    step4_main()
+    sb_path = f"{get_dirs(EPISODE_NUM)['storyboard']}/episode_{EPISODE_NUM:02d}_storyboard.json"
+    videos_dir = f"{get_dirs(EPISODE_NUM)['videos']}"
+    subprocess.run([
+        "python", "step4_generate_videos_wan22.py",
+        "--storyboard", sb_path,
+        "--output-dir", videos_dir,
+    ], cwd=_SCRIPT_DIR)
 
     # Step 5: 配音生成
     log("\n" + "=" * 50)
     log("Step 5: 配音生成")
     log("=" * 50)
-    from step5_generate_audio import main as step5_main
-    sb_path = f"{get_dirs(EPISODE_NUM)['storyboard']}/episode_{EPISODE_NUM:02d}_storyboard.json"
     audio_dir = f"{get_dirs(EPISODE_NUM)['audio']}"
-    sys.argv = ["step5", "--storyboard", sb_path, "--output-dir", audio_dir]
-    step5_main()
+    subprocess.run([
+        "python", "step5_generate_audio.py",
+        "--storyboard", sb_path,
+        "--output-dir", audio_dir,
+    ], cwd=_SCRIPT_DIR)
 
     # Step 6: 剪辑合成
     log("\n" + "=" * 50)
     log("Step 6: 剪辑合成")
     log("=" * 50)
-    from step6_compose import main as step6_main
-    videos_dir = f"{get_dirs(EPISODE_NUM)['videos']}"
     final_dir = f"{get_dirs(EPISODE_NUM)['final']}"
-    sys.argv = ["step6", "--storyboard", sb_path, "--videos-dir", videos_dir,
-               "--audio-dir", audio_dir, "--output-dir", final_dir]
-    step6_main()
+    subprocess.run([
+        "python", "step6_compose.py",
+        "--storyboard", sb_path,
+        "--videos-dir", videos_dir,
+        "--audio-dir", audio_dir,
+        "--output-dir", final_dir,
+    ], cwd=_SCRIPT_DIR)
 
     # 总结
     elapsed = (time.time() - t0) / 60
