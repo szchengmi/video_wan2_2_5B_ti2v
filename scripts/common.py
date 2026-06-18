@@ -11,8 +11,19 @@ import subprocess
 # 默认配置（可被环境变量覆盖）
 # ============================================================
 
-GOOGLE_API_KEY=os.environ.get("GOOGLE_API_KEY", "")
-HF_TOKEN=os.environ.get("HF_TOKEN", "")
+def _get_kaggle_secret(key_name):
+    """从 Kaggle Secrets 读取密钥"""
+    try:
+        from kaggle_secrets import UserSecretsClient
+        val = UserSecretsClient().get_secret(key_name)
+        if val:
+            return val
+    except Exception:
+        pass
+    return os.environ.get(key_name, "")
+
+GOOGLE_API_KEY = _get_kaggle_secret("GOOGLE_API_KEY")
+HF_TOKEN = _get_kaggle_secret("HF_TOKEN")
 
 BASE_DIR = os.environ.get("BASE_DIR", "/kaggle/working/ai-series")
 EPISODE_NUM = int(os.environ.get("EPISODE_NUM", "1"))
