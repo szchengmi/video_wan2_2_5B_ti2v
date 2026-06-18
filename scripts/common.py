@@ -38,8 +38,8 @@ BASE_DIR = os.environ.get("BASE_DIR", "/kaggle/working/ai-series")
 EPISODE_NUM = int(os.environ.get("EPISODE_NUM", "1"))
 
 # Wan2.2 TI2V 模型路径 (Kaggle Dataset)
-WAN22_DATASET = "/kaggle/input/saysnkaggle/wan2-2-5b-f16"
-WAN22_MODELS_DIR = f"{WAN22_DATASET}/models"  # Dataset 有 models/ 子目录
+WAN22_DATASET = "/kaggle/input/datasets/saysnkaggle/wan2-2-5b-f16"
+WAN22_MODELS_DIR = f"{WAN22_DATASET}/models"  # safetensors 在 models/ 子目录下
 
 # 视频参数 (Wan2.2 TI2V 5B)
 WAN22_WIDTH = 832
