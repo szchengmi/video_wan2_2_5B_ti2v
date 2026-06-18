@@ -26,7 +26,6 @@ sys.path.insert(0, _SCRIPT_DIR)
 from common import (
     BASE_DIR, EPISODE_NUM, WAN22_DATASET, WAN22_MODELS_DIR,
     get_dirs, setup_dirs, log, run_cmd, save_json, load_json,
-    get_kaggle_secret,
 )
 
 import time
