@@ -382,9 +382,9 @@ def main(storyboard=None):
         log("❌ ComfyUI 启动失败")
         return
 
-    # 参数
+    # 参数 (对齐参考工作流的 shift=8, euler/simple)
     w, h = 832, 480
-    num_frames = 49  # ~6s @ 8fps
+    num_frames = 49  # ~6s @ 8fps → 13 latent 帧
     steps = 20
     cfg = 5.0
     sampler = "euler"
