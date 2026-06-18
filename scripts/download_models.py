@@ -2,23 +2,19 @@
 """
 Wan2.2 TI2V 5B 模型下载
 ====================
-直接指定文件名，用 huggingface_hub 下载。
+Kaggle 上直接下载模型到 /kaggle/working/models/
 
-Kaggle 用法:
-  1. 添加 Secret: HF_TOKEN (你的 HuggingFace token)
-  2. !python download_models.py
+用法:
+  !python download_models.py
 
-模型:
-  1. wan2.2_ti2v_5B_fp16.safetensors (UNET) - ~10GB
-  2. umt5_xxl_fp8_e4m3fn_scaled.safetensors (CLIP) - ~12GB
-  3. wan2.2_vae.safetensors (VAE) - ~1.5GB
+依赖: 已配置 Kaggle Secret HF_TOKEN
 """
-
 import os
 import sys
 import time
 import shutil
 import subprocess
+from pathlib import Path
 
 MODEL_CACHE_DIR = "/kaggle/working/models"
 
@@ -67,41 +63,48 @@ def get_dir_size_gb(path):
 def download_file(model_id, filename, dest_path):
     """下载单个文件，直接到目标位置"""
     from huggingface_hub import hf_hub_download
+
+    dest_dir = os.path.dirname(dest_path)
+    os.makedirs(dest_dir, exist_ok=True)
+
+    # 已存在且足够大则跳过
+    if os.path.isfile(dest_path) and os.path.getsize(dest_path) > 100 * 1024 * 1024:
+        size_mb = os.path.getsize(dest_path) / 1e6
+        log(f"  ✅ {os.path.basename(dest_path)} (已存在, {size_mb:.0f}MB)")
+        return True
+
+    log(f"  ⬇️ {os.path.basename(dest_path)}...")
+
     try:
-        dest_dir = os.path.dirname(dest_path)
-        os.makedirs(dest_dir, exist_ok=True)
         hf_hub_download(
             repo_id=model_id,
             filename=filename,
             local_dir=dest_dir,
         )
-        return True
+        if os.path.isfile(dest_path):
+            size_mb = os.path.getsize(dest_path) / 1e6
+            log(f"  ✅ 完成: {size_mb:.0f}MB")
+            return True
+        else:
+            log(f"  ❌ 下载后文件不存在")
+            return False
     except Exception as e:
-        log(f"    ❌ {filename}: {e}")
+        log(f"  ❌ {e}")
         return False
 
 
 # ============================================================
-# 模型定义
+# 模型定义 — 直接指定 repo_id 和 filename
 # ============================================================
 
 MODELS = [
     {
         "id": "Comfy-Org/Wan_2.2_ComfyUI_Repackaged",
-        "name": "Wan2.2 TI2V 5B",
+        "name": "Wan2.2 TI2V 5B UNET",
         "dir": "wan22_ti2v_5b",
         "desc": "~10GB",
         "files": [
-            "split_files/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors",
-        ],
-    },
-    {
-        "id": "Comfy-Org/Wan_2.1_ComfyUI_repackaged",
-        "name": "UMT5 XXL Encoder",
-        "dir": "umt5_xxl",
-        "desc": "~12GB",
-        "files": [
-            "split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors",
+            ("split_files/diffusion_models/wan2.2_ti2v_5B_fp16.safetensors", "wan2.2_ti2v_5B_fp16.safetensors"),
         ],
     },
     {
@@ -110,7 +113,16 @@ MODELS = [
         "dir": "wan22_vae",
         "desc": "~1.5GB",
         "files": [
-            "split_files/vae/wan2.2_vae.safetensors",
+            ("split_files/vae/wan2.2_vae.safetensors", "wan2.2_vae.safetensors"),
+        ],
+    },
+    {
+        "id": "Comfy-Org/Wan_2.1_ComfyUI_repackaged",
+        "name": "UMT5 XXL Encoder",
+        "dir": "umt5_xxl",
+        "desc": "~12GB",
+        "files": [
+            ("split_files/text_encoders/umt5_xxl_fp8_e4m3fn_scaled.safetensors", "umt5_xxl_fp8_e4m3fn_scaled.safetensors"),
         ],
     },
 ]
@@ -126,12 +138,6 @@ def main():
     log("=" * 55)
     log(f"目标: {MODEL_CACHE_DIR}")
 
-    # 清理旧文件
-    if os.path.isdir(MODEL_CACHE_DIR):
-        log(f"清理旧目录: {MODEL_CACHE_DIR}")
-        shutil.rmtree(MODEL_CACHE_DIR)
-    os.makedirs(MODEL_CACHE_DIR, exist_ok=True)
-
     subprocess.run("pip install -q -U huggingface_hub", shell=True, timeout=120)
 
     for i, model in enumerate(MODELS, 1):
@@ -141,13 +147,12 @@ def main():
         os.makedirs(target, exist_ok=True)
 
         ok = 0
-        for filename in model["files"]:
-            dest = f"{target}/{filename}"
+        for filename, save_name in model["files"]:
+            dest = f"{target}/{save_name}"
 
             if download_file(model["id"], filename, dest):
                 ok += 1
 
-            # 每个文件后检查容量
             free = shutil.disk_usage("/kaggle/working").free / 1e9
             if free < 0.5:
                 log(f"  ⚠️  磁盘不足！剩余{free:.1f}GB，停止下载")
@@ -156,7 +161,6 @@ def main():
         size = get_dir_size_gb(target)
         log(f"  结果: {model['dir']} ({size:.2f}GB, {ok}/{len(model['files'])}个)")
 
-    # 最终
     log(f"\n{'='*55}")
     log("下载完成！")
     total = get_dir_size_gb(MODEL_CACHE_DIR)
