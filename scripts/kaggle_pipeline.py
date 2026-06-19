@@ -38,6 +38,8 @@ def main():
     parser = argparse.ArgumentParser(description="Wan2.2 TI2V AI短剧生成")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--episode", type=int, default=None)
+    parser.add_argument("--duration", type=int, default=15, help="目标时长(秒)")
+    parser.add_argument("--style", type=str, default="二次元", help="视频风格: 二次元/古代田园/赛博朋克/动漫/类真人/火柴人")
     args = parser.parse_args()
 
     if args.episode is not None:
@@ -47,7 +49,8 @@ def main():
     log("╔══════════════════════════════════════════╗")
     log("║   AI短剧 — Wan2.2 TI2V 5B Pipeline       ║")
     log("╚══════════════════════════════════════════╝")
-    log(f"集数: {EPISODE_NUM} | 模型: {WAN22_DATASET}")
+    log(f"集数: {EPISODE_NUM} | 模型: {WAN22_MODELS_DIR}")
+    log(f"参数: 时长={args.duration}秒 | 风格={args.style}")
 
     # 清除旧输出
     if args.force:
@@ -70,8 +73,8 @@ def main():
     log("Step 1: 剧本生成")
     log("=" * 50)
     from step1_generate_story import generate_script
-    script = generate_script(EPISODE_NUM)
-    log(f"剧本: {script.get('title')}")
+    script = generate_script(EPISODE_NUM, duration_minutes=args.duration, style=args.style)
+    log(f"剧本: {script.get('title')} | 风格: {script.get('style', args.style)}")
 
     # 保存剧本
     script_path = f"{get_dirs(EPISODE_NUM)['storyboard']}/episode_{EPISODE_NUM:02d}_script.json"

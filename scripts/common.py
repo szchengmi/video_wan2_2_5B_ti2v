@@ -182,6 +182,45 @@ EMOTION_ENHANCE = {
     "thoughtful": "thoughtful expression, contemplative"
 }
 
+# ============================================================
+# 风格预设 (Style Presets)
+# ============================================================
+
+STYLE_PRESETS = {
+    "二次元": {
+        "prompt_suffix": "anime style, vibrant colors, clean lines, studio ghibli inspired, detailed eyes, dynamic composition, cel shading",
+        "negative_prompt": "realistic, photographic, 3D render, western cartoon, ugly, deformed, blurry",
+        "scene_suffix": "anime background",
+    },
+    "古代田园": {
+        "prompt_suffix": "ancient Chinese pastoral style, traditional ink painting, rice paddies, misty mountains, soft watercolor, warm earth tones, handscroll aesthetic",
+        "negative_prompt": "modern, city, technology, neon, cars, buildings, anime, cartoon, ugly, deformed",
+        "scene_suffix": "ancient Chinese landscape, ink wash painting background",
+    },
+    "赛博朋克": {
+        "prompt_suffix": "cyberpunk style, neon lights, dark city, rain, holographic displays, high contrast, blade runner aesthetic, volumetric lighting",
+        "negative_prompt": "nature, daylight, pastel, soft, vintage, anime, cartoon, ugly, deformed",
+        "scene_suffix": "cyberpunk city interior, neon lights, high-tech, dark atmosphere",
+    },
+    "动漫": {
+        "prompt_suffix": "anime style, detailed shading, japanese animation style, expressive characters, vivid colors, key visual",
+        "negative_prompt": "realistic, photographic, western cartoon, chibi, ugly, deformed, blurry",
+        "scene_suffix": "anime background",
+    },
+    "类真人": {
+        "prompt_suffix": "live-action style, photorealistic, cinematic lighting, shallow depth of field, film grain, natural skin texture, dramatic lighting",
+        "negative_prompt": "anime, cartoon, illustration, drawing, painting, deformed, blurry, low quality",
+        "scene_suffix": "realistic interior, cinematic lighting, photorealistic environment",
+    },
+    "火柴人": {
+        "prompt_suffix": "stick figure style, minimalist, black lines on white background, simple shapes, clean design, no shading, line art",
+        "negative_prompt": "detailed, realistic, colorful, complex, shaded, 3D, anime, ugly, deformed",
+        "scene_suffix": "minimalist background, white background, simple lines",
+    },
+}
+
+DEFAULT_STYLE = "二次元"
+
 SHOT_PARAMS = {
     "close_up": {"w": 768, "h": 768, "prefix": "close-up shot of"},
     "medium_shot": {"w": 768, "h": 512, "prefix": "medium shot of"},

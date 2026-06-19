@@ -10,20 +10,26 @@ import json
 import re
 
 
-def generate_script(episode_num=1, genre="urban_romance", prev_summary=""):
+def generate_script(episode_num=1, genre="urban_romance", prev_summary="",
+                    duration_minutes=3, style="二次元"):
     from google import genai
 
     client = genai.Client(api_key=GOOGLE_API_KEY)
+
+    # 根据时长(秒)计算场景和镜头数量 (每5秒一个场景)
+    duration_sec = int(duration_minutes)  # 参数名保留但实际是秒
+    num_scenes = max(1, duration_sec // 5)
+    num_shots_per_scene = 3
 
     prompt = f"""你是一个专业的中文短剧编剧。请为一部{genre}题材的AI短剧写第{episode_num}集的完整剧本。
 
 角色: 小明(28岁程序员,内向善良,戴眼镜短发) | 小丽(26岁设计师,活泼开朗,长发) | 王总(45岁总监,严厉公正)
 场景: office(现代办公室) cafe(温馨咖啡馆) park(城市公园) apartment(温馨公寓) street(城市街道)
 
-要求: 3-5分钟, 5-8场景, 每场2-4镜头, 完整故事线+悬念结尾
+要求: 目标时长{duration_sec}秒, {num_scenes}个场景左右, 每场{num_shots_per_scene}个镜头, 完整故事线+悬念结尾
 
 纯JSON输出:
-{{"episode": {episode_num}, "title": "标题", "scenes": [{{"scene_id": "scene_1", "location": "office",
+{{"episode": {episode_num}, "title": "标题", "style": "{style}", "scenes": [{{"scene_id": "scene_1", "location": "office",
 "time_of_day": "morning", "lighting": "自然光", "mood": "氛围",
 "shots": [{{"shot_id": "shot_1", "shot_type": "medium_shot", "camera_movement": "static",
 "duration_seconds": 3, "description": "画面描述", "character": "xiaoming",
@@ -61,11 +67,12 @@ def generate_script(episode_num=1, genre="urban_romance", prev_summary=""):
             return _get_fallback_script(episode_num, genre)
 
 
-def _get_fallback_script(episode_num=1, genre="urban_romance"):
+def _get_fallback_script(episode_num=1, genre="urban_romance", style="二次元"):
     """预置兜底剧本（Gemini JSON 解析失败时使用）"""
     return {
         "episode": episode_num,
         "title": "第一集：初遇",
+        "style": style,
         "scenes": [
             {
                 "scene_id": "scene_1", "location": "office", "time_of_day": "morning",

@@ -391,7 +391,8 @@ def main(storyboard=None):
     scheduler = "simple"
     shift = 8.0
 
-    log(f"参数: {w}x{h} | {num_frames}f | {steps}步 | CFG={cfg} | shift={shift} | {sampler}/{scheduler}")
+    style_name = storyboard.get("style", "未指定")
+    log(f"参数: {w}x{h} | {num_frames}f | {steps}步 | CFG={cfg} | shift={shift} | {sampler}/{scheduler} | 风格: {style_name}")
 
     count = 0
     for scene in storyboard.get("scenes", []):
@@ -405,7 +406,12 @@ def main(storyboard=None):
                 log(f"  [{count}/{total}] {sid} 跳过")
                 continue
 
-            video_prompt = f"{shot.get('prompt', '')}, smooth motion, cinematic, high quality"
+            prompt_base = shot.get('prompt', '')
+            if 'anime style' not in prompt_base and 'style' not in storyboard:
+                # 兼容旧 storyboard 无风格字段的情况，追加默认后缀
+                video_prompt = f"{prompt_base}, smooth motion, cinematic, high quality"
+            else:
+                video_prompt = f"{prompt_base}, smooth motion, cinematic"
             neg_prompt = shot.get("negative_prompt", "blurry, distorted, static, motionless, low quality")
             seed = shot.get("seed", 42)
             if isinstance(seed, str) or seed < 0:

@@ -8,10 +8,16 @@ from common import *
 import argparse
 
 
-def generate_storyboard(script_data):
+def generate_storyboard(script_data, style_name=None):
+    # 风格: 优先参数 > storyboard顶层字段 > 默认
+    if style_name is None:
+        style_name = script_data.get("style", DEFAULT_STYLE)
+    style = STYLE_PRESETS.get(style_name, STYLE_PRESETS[DEFAULT_STYLE])
+
     storyboard = {
         "episode": script_data.get("episode", 1),
         "title": script_data.get("title", ""),
+        "style": style_name,
         "characters": {},
         "scenes": []
     }
@@ -46,12 +52,15 @@ def generate_storyboard(script_data):
             sp = SCENE_PROMPTS.get(scene["location"], "")
             if sp:
                 pp.append(sp)
+            # 注入风格化的场景后缀
+            pp.append(style["scene_suffix"])
             pp.append(f"{scene['time_of_day']}, {scene['lighting']}")
             pp.append(shot.get("description", ""))
-            pp.append("masterpiece, best quality, detailed, anime style")
+            pp.append("masterpiece, best quality, detailed")
+            pp.append(style["prompt_suffix"])
             full_prompt = ", ".join([p for p in pp if p])
 
-            neg = "lowres, bad anatomy, bad hands, text, error, missing fingers, extra digit, cropped, worst quality, low quality, jpeg artifacts, blurry"
+            neg = style["negative_prompt"]
             if char != "none" and char in CHARACTER_PROMPTS:
                 neg += ", " + CHARACTER_PROMPTS[char]["negative_prompt"]
 
@@ -104,7 +113,8 @@ def main():
     args = parser.parse_args()
 
     script_data = load_json(args.script)
-    storyboard = generate_storyboard(script_data)
+    style_name = script_data.get("style", None)
+    storyboard = generate_storyboard(script_data, style_name=style_name)
     save_json(storyboard, f"{args.output_dir}/episode_{storyboard['episode']:02d}_storyboard.json")
     total = sum(len(s.get("shots", [])) for s in storyboard.get("scenes", []))
     print(f"[OK] {len(storyboard['scenes'])}场景 | {total}镜头")
