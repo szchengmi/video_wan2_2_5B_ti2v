@@ -19,7 +19,7 @@ def generate_script(episode_num=1, genre="urban_romance", prev_summary="",
     # 根据时长(秒)计算场景和镜头数量 (每5秒一个场景)
     duration_sec = int(duration_minutes)  # 参数名保留但实际是秒
     num_scenes = max(1, duration_sec // 5)
-    num_shots_per_scene = 2 if duration_sec <= 30 else 3
+    num_shots_per_scene = max(1, duration_sec // num_scenes // 4)
 
     prompt = f"""你是一个专业的中文短剧编剧。请为一部{genre}题材的AI短剧写第{episode_num}集的完整剧本。
 
