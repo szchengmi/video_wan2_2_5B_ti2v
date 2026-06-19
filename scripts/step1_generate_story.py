@@ -16,17 +16,16 @@ def generate_script(episode_num=1, genre="urban_romance", prev_summary="",
 
     client = genai.Client(api_key=GOOGLE_API_KEY)
 
-    # 根据时长(秒)计算场景和镜头数量 (每5秒一个场景)
+    # Gemini 根据总时长灵活决定场景数和镜头数
+    # 每个镜头 duration_seconds 在剧本中指定，总时长 ≈ 所有镜头之和
     duration_sec = int(duration_minutes)  # 参数名保留但实际是秒
-    num_scenes = max(1, duration_sec // 5)
-    num_shots_per_scene = max(1, duration_sec // num_scenes // 4)
 
     prompt = f"""你是一个专业的中文短剧编剧。请为一部{genre}题材的AI短剧写第{episode_num}集的完整剧本。
 
 角色: 小明(28岁程序员,内向善良,戴眼镜短发) | 小丽(26岁设计师,活泼开朗,长发) | 王总(45岁总监,严厉公正)
 场景: office(现代办公室) cafe(温馨咖啡馆) park(城市公园) apartment(温馨公寓) street(城市街道)
 
-要求: 目标时长{duration_sec}秒, {num_scenes}个场景左右, 每场{num_shots_per_scene}个镜头, 完整故事线+悬念结尾
+要求: 目标时长{duration_sec}秒, 每个镜头3-6秒, 合理安排场景数和镜头数, 完整故事线+悬念结尾
 
 纯JSON输出:
 {{"episode": {episode_num}, "title": "标题", "style": "{style}", "scenes": [{{"scene_id": "scene_1", "location": "office",
