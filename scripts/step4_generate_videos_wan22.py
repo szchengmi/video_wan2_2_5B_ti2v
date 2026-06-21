@@ -156,9 +156,8 @@ def _start_comfyui():
 # ============================================================
 
 def _find_wan22_models():
-    """查找 Wan2.2 模型文件"""
+    """查找 Wan2.2 / Wan2.1 模型文件"""
     search_paths = [WAN22_MODELS_DIR, "/kaggle/working/models"]
-    # 也搜索 Dataset 的 models/ 子目录
     for d in ["/kaggle/input/saysnkaggle/wan2-2-5b-f16",
               "/kaggle/input/saysnkaggle/wan2-2-5b-f16/models"]:
         if os.path.isdir(d):
@@ -173,7 +172,7 @@ def _find_wan22_models():
             fp = os.path.join(base, f)
             if not os.path.isfile(fp):
                 continue
-            if result["unet"] is None and "wan2.2_ti2v_5b" in fl and "fp16" in fl:
+            if result["unet"] is None and ("wan2.2_ti2v_5b" in fl or "wan2.1_1.3b" in fl or "wan2.1_14b" in fl) and ("fp16" in fl or "gguf" in fl):
                 result["unet"] = fp
             elif result["clip"] is None and "umt5_xxl" in fl:
                 result["clip"] = fp
@@ -382,17 +381,27 @@ def main(storyboard=None):
         log("❌ ComfyUI 启动失败")
         return
 
-    # 参数 (对齐参考工作流的 shift=8, euler/simple)
-    w, h = 832, 480
-    num_frames = 49  # ~6s @ 8fps → 13 latent 帧
-    steps = 20
-    cfg = 5.0
+    # 参数 — 从环境变量读取模型配置（由 kaggle_pipeline 传入）
+    model_name = os.environ.get("WAN22_MODEL", "wan2.2-5b-f16")
+    fps = int(os.environ.get("WAN22_FPS", "8"))
+    steps = int(os.environ.get("WAN22_STEPS", "20"))
+    cfg = float(os.environ.get("WAN22_CFG", "5.0"))
+    shift = float(os.environ.get("WAN22_SHIFT", "8.0"))
+
+    # 尺寸映射
+    SIZE_MAP = {1: (384, 384), 2: (834, 480), 3: (480, 834), 4: (576, 320), 5: (384, 640)}
+    size_idx = int(os.environ.get("WAN22_SIZE", "2"))
+    w, h = SIZE_MAP.get(size_idx, (834, 480))
+
+    # 动态帧数：根据 duration_seconds × fps 计算
+    duration_seconds = shot.get("duration_seconds", 6)
+    num_frames = max(int(duration_seconds * fps), 9)
+
     sampler = "euler"
     scheduler = "simple"
-    shift = 8.0
 
     style_name = storyboard.get("style", "未指定")
-    log(f"参数: {w}x{h} | {num_frames}f | {steps}步 | CFG={cfg} | shift={shift} | {sampler}/{scheduler} | 风格: {style_name}")
+    log(f"模型: {model_name} | {w}x{h} | {num_frames}f ({duration_seconds}s×{fps}fps) | {steps}步 | CFG={cfg} | shift={shift} | 风格: {style_name}")
 
     count = 0
     for scene in storyboard.get("scenes", []):
@@ -416,6 +425,10 @@ def main(storyboard=None):
             seed = shot.get("seed", 42)
             if isinstance(seed, str) or seed < 0:
                 seed = 42
+
+            # 动态帧数：根据镜头 duration_seconds 计算
+            duration_seconds = shot.get("duration_seconds", 6)
+            num_frames = max(int(duration_seconds * fps), 9)
 
             workflow = _build_wan22_workflow(
                 positive_prompt=video_prompt,
