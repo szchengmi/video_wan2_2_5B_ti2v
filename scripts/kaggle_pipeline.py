@@ -98,26 +98,27 @@ def main():
     log("Step 3: 画面生成 → 跳过 (Wan2.2 直接 T2V)")
     log("=" * 50)
 
-    # Step 4: 视频生成 (Wan2.2 TI2V)
+    # Step 4: 配音生成 (先于视频，以便将 duration_seconds 写回 storyboard)
     log("\n" + "=" * 50)
-    log("Step 4: 视频生成 (Wan2.2 TI2V 5B)")
-    log("=" * 50)
-    videos_dir = f"{get_dirs(EPISODE_NUM)['videos']}"
-    subprocess.run([
-        "python", "step4_generate_videos_wan22.py",
-        "--storyboard", sb_path,
-        "--output-dir", videos_dir,
-    ], cwd=_SCRIPT_DIR)
-
-    # Step 5: 配音生成
-    log("\n" + "=" * 50)
-    log("Step 5: 配音生成")
+    log("Step 4: 配音生成 (多轨合成)")
     log("=" * 50)
     audio_dir = f"{get_dirs(EPISODE_NUM)['audio']}"
-    subprocess.run([
-        "python", "step5_generate_audio.py",
+    subprocess.run([sys.executable, "step5_generate_audio.py",
         "--storyboard", sb_path,
         "--output-dir", audio_dir,
+    ], cwd=_SCRIPT_DIR)
+
+    # 重新加载 storyboard（step5 可能更新了 duration_seconds）
+    storyboard = load_json(sb_path)
+
+    # Step 5: 视频生成 (Wan2.2 TI2V)
+    log("\n" + "=" * 50)
+    log("Step 5: 视频生成 (Wan2.2 TI2V 5B)")
+    log("=" * 50)
+    videos_dir = f"{get_dirs(EPISODE_NUM)['videos']}"
+    subprocess.run([sys.executable, "step4_generate_videos_wan22.py",
+        "--storyboard", sb_path,
+        "--output-dir", videos_dir,
     ], cwd=_SCRIPT_DIR)
 
     # Step 6: 剪辑合成

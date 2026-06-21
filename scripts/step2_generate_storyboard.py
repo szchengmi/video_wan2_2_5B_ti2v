@@ -64,6 +64,35 @@ def generate_storyboard(script_data, style_name=None):
             if char != "none" and char in CHARACTER_PROMPTS:
                 neg += ", " + CHARACTER_PROMPTS[char]["negative_prompt"]
 
+            # 提取纯文本字段（向后兼容）
+            dialogue_text = shot.get("dialogue", "")
+            narration_text = shot.get("narration", "")
+            subtitle_text = shot.get("subtitle", "")
+
+            # 如果有 audio_events，从 dialogue 数组中提取纯文本拼接
+            audio_events = shot.get("audio_events")
+            if audio_events and isinstance(audio_events, dict):
+                if not dialogue_text:
+                    dialogue_text = " ".join(
+                        evt.get("lines", "") for evt in audio_events.get("dialogue", [])
+                        if evt.get("lines")
+                    )
+                if not narration_text:
+                    narration_text = " ".join(
+                        evt.get("lines", "") for evt in audio_events.get("VO", [])
+                        if evt.get("lines")
+                    )
+                if not subtitle_text:
+                    # subtitle 取所有对话+旁白文本
+                    all_lines = []
+                    for evt in audio_events.get("dialogue", []):
+                        if evt.get("lines"):
+                            all_lines.append(evt["lines"])
+                    for evt in audio_events.get("VO", []):
+                        if evt.get("lines"):
+                            all_lines.append(evt["lines"])
+                    subtitle_text = " ".join(all_lines)
+
             scene_data["shots"].append({
                 "shot_id": shot["shot_id"],
                 "shot_type": shot_type,
@@ -75,12 +104,13 @@ def generate_storyboard(script_data, style_name=None):
                 "negative_prompt": neg,
                 "seed": CHARACTER_PROMPTS.get(char, {}).get("seed", -1),
                 "character": char,
-                "dialogue": shot.get("dialogue", ""),
-                "narration": shot.get("narration", ""),
-                "subtitle": shot.get("subtitle", ""),
+                "dialogue": dialogue_text,
+                "narration": narration_text,
+                "subtitle": subtitle_text,
                 "description": shot.get("description", ""),
                 "action": shot.get("action", ""),
                 "emotion": emotion,
+                "audio_events": audio_events if audio_events else {},
                 "steps": IMAGE_STEPS,
                 "guidance": IMAGE_GUIDANCE
             })
